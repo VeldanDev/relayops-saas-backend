@@ -15,7 +15,7 @@ const toggleFeatureSchema = z.object({
 
 const createTenantSchema = z.object({
   name: z.string().min(2).max(80),
-  slug: z.string().min(2).max(40).regex(/^[a-z0-9-]+$/, "Slug must contain lowercase letters, numbers, or hyphens"),
+  slug: z.string().min(2).max(40).regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, or hyphens"),
   planCode: z.string().min(2),
   adminName: z.string().min(2).max(80),
   adminEmail: z.string().email(),
@@ -29,6 +29,11 @@ const updateTenantPlanSchema = z.object({
 const updateTenantStatusSchema = z.object({
   status: z.enum(["active", "suspended"]),
 });
+
+function derivePrefix(name, slug) {
+  const letters = (name || slug).replace(/[^a-zA-Z]/g, "").toUpperCase();
+  return (letters.slice(0, 3) || "ORG").padEnd(3, "X");
+}
 
 router.get(
   "/plans",
@@ -81,7 +86,7 @@ router.patch(
     await recordAudit({
       tenantId: null,
       actorId: req.user.id,
-      action: "plan.feature_toggled",
+      action: "plan.entitlement_updated",
       resource: `plan:${plan.code}`,
       meta: { featureKey, enabled: updated.enabled },
     });
@@ -102,7 +107,7 @@ router.get(
       orderBy: { createdAt: "asc" },
       include: {
         plan: { select: { id: true, code: true, name: true, priceMonthly: true } },
-        _count: { select: { users: true, projects: true, webhooks: true } },
+        _count: { select: { users: true, incidents: true, webhooks: true } },
       },
     });
     res.json({ tenants });
@@ -117,11 +122,15 @@ router.post(
     if (!plan) throw new AppError(404, "PLAN_NOT_FOUND", `Plan '${req.body.planCode}' not found.`);
 
     const passwordHash = await bcrypt.hash(req.body.adminPassword, 10);
+    const codePrefix = derivePrefix(req.body.name, req.body.slug);
+
     const created = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
           name: req.body.name.trim(),
           slug: req.body.slug.trim().toLowerCase(),
+          codePrefix,
+          nextIncidentSeq: 101,
           planId: plan.id,
           status: "active",
         },
@@ -133,10 +142,11 @@ router.post(
           email: req.body.adminEmail.trim().toLowerCase(),
           passwordHash,
           name: req.body.adminName.trim(),
+          title: "Organization Admin",
           role: "TENANT_ADMIN",
           tenantId: tenant.id,
         },
-        select: { id: true, email: true, name: true, role: true, tenantId: true },
+        select: { id: true, email: true, name: true, title: true, role: true, tenantId: true },
       });
 
       return { tenant, admin };
@@ -145,7 +155,7 @@ router.post(
     await recordAudit({
       tenantId: created.tenant.id,
       actorId: req.user.id,
-      action: "tenant.created",
+      action: "tenant.provisioned",
       resource: `tenant:${created.tenant.slug}`,
       meta: { planCode: plan.code, adminEmail: created.admin.email },
     });
@@ -175,9 +185,9 @@ router.patch(
     await recordAudit({
       tenantId: tenant.id,
       actorId: req.user.id,
-      action: "tenant.plan_changed",
+      action: "tenant.plan_switched",
       resource: `tenant:${tenant.slug}`,
-      meta: { fromPlanId: tenant.planId, toPlanCode: plan.code },
+      meta: { toPlanCode: plan.code },
     });
 
     res.json({ tenant: updated });
@@ -200,7 +210,7 @@ router.patch(
     await recordAudit({
       tenantId: tenant.id,
       actorId: req.user.id,
-      action: "tenant.status_changed",
+      action: "tenant.status_updated",
       resource: `tenant:${tenant.slug}`,
       meta: { status: req.body.status },
     });

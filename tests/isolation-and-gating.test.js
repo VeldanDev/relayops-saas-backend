@@ -44,99 +44,130 @@ after(async () => {
   await prisma.$disconnect();
 });
 
-describe("Multi-Tenant Isolation, RBAC & Dynamic Feature Gating", () => {
-  it("enforces strict tenant data isolation and blocks cross-tenant headers", async () => {
-    const acme = await login(DEMO_ACCOUNTS.acmeAdmin);
-    const globex = await login(DEMO_ACCOUNTS.globexAdmin);
+describe("RelayOps Multi-Tenant Isolation, RBAC & Live Feature Gating", () => {
+  it("isolates incident records strictly per tenant and rejects header spoofing", async () => {
+    const northstar = await login(DEMO_ACCOUNTS.northstarAdmin);
+    const helios = await login(DEMO_ACCOUNTS.heliosAdmin);
 
-    const acmeList = await req("/api/tenant/projects", { token: acme.token });
-    const globexList = await req("/api/tenant/projects", { token: globex.token });
+    const nsList = await req("/api/tenant/incidents", { token: northstar.token });
+    const hlList = await req("/api/tenant/incidents", { token: helios.token });
 
-    assert.equal(acmeList.status, 200);
-    assert.equal(globexList.status, 200);
-    assert.ok(acmeList.data.projects.every((p) => p.tenantId === acme.tenant.id));
-    assert.ok(globexList.data.projects.every((p) => p.tenantId === globex.tenant.id));
+    assert.equal(nsList.status, 200);
+    assert.equal(hlList.status, 200);
+    assert.ok(nsList.data.incidents.every((i) => i.tenantId === northstar.tenant.id && i.key.startsWith("NSP-")));
+    assert.ok(hlList.data.incidents.every((i) => i.tenantId === helios.tenant.id && i.key.startsWith("HLC-")));
 
-    // Attempt to spoof Globex tenant via header using Acme token
-    const spoofed = await req("/api/tenant/projects", {
-      token: acme.token,
-      headers: { "x-tenant-slug": "globex" },
+    // Attempt to spoof Helios slug with Northstar JWT
+    const spoofed = await req("/api/tenant/incidents", {
+      token: northstar.token,
+      headers: { "x-tenant-slug": "helios" },
     });
     assert.equal(spoofed.status, 403);
     assert.equal(spoofed.data.error.code, "CROSS_TENANT_FORBIDDEN");
 
-    // Attempt to mutate Globex's project ID using Acme token
-    const globexProjectId = globexList.data.projects[0].id;
-    const crossUpdate = await req(`/api/tenant/projects/${globexProjectId}`, {
-      method: "PATCH",
-      token: acme.token,
-      body: { name: "Hijacked" },
+    // Attempt to read or comment on Helios incident using Northstar JWT -> 404 (no leak)
+    const heliosIncidentId = hlList.data.incidents[0].id;
+    const crossRead = await req(`/api/tenant/incidents/${heliosIncidentId}`, {
+      token: northstar.token,
     });
-    assert.equal(crossUpdate.status, 404);
+    assert.equal(crossRead.status, 404);
+
+    const crossComment = await req(`/api/tenant/incidents/${heliosIncidentId}/comments`, {
+      method: "POST",
+      token: northstar.token,
+      body: { body: "Cross-tenant injection attempt" },
+    });
+    assert.equal(crossComment.status, 404);
   });
 
-  it("enforces RBAC between Super Admin, Tenant Admin, and Tenant User", async () => {
-    const acmeUser = await login(DEMO_ACCOUNTS.acmeUser);
-    const acmeAdmin = await login(DEMO_ACCOUNTS.acmeAdmin);
+  it("enforces RBAC between Super Admin, Tenant Admin, and On-Call Responder", async () => {
+    const nsUser = await login(DEMO_ACCOUNTS.northstarUser);
+    const nsAdmin = await login(DEMO_ACCOUNTS.northstarAdmin);
 
-    // Tenant Admin cannot hit Super Admin routes
-    const adminRoute = await req("/api/admin/plans", { token: acmeAdmin.token });
-    assert.equal(adminRoute.status, 403);
-    assert.equal(adminRoute.data.error.code, "FORBIDDEN_ROLE");
+    // Tenant Admin cannot access Super Admin control plane
+    const adminAttempt = await req("/api/admin/plans", { token: nsAdmin.token });
+    assert.equal(adminAttempt.status, 403);
+    assert.equal(adminAttempt.data.error.code, "FORBIDDEN_ROLE");
 
-    // Tenant User can create a project but cannot delete it
-    const created = await req("/api/tenant/projects", {
+    // Responder can open and comment on an incident, but cannot delete it
+    const created = await req("/api/tenant/incidents", {
       method: "POST",
-      token: acmeUser.token,
-      body: { name: "RBAC Temp Project", description: "Testing delete permissions" },
+      token: nsUser.token,
+      body: {
+        title: "Redis cache eviction spike on checkout session store",
+        service: "session-cache",
+        severity: "P3",
+      },
     });
     assert.equal(created.status, 201);
+    assert.match(created.data.incident.key, /^NSP-\d+$/);
 
-    const userDel = await req(`/api/tenant/projects/${created.data.project.id}`, {
+    const commentRes = await req(`/api/tenant/incidents/${created.data.incident.id}/comments`, {
+      method: "POST",
+      token: nsUser.token,
+      body: { body: "Scaled maxmemory from 4GB to 8GB." },
+    });
+    assert.equal(commentRes.status, 201);
+
+    const userDel = await req(`/api/tenant/incidents/${created.data.incident.id}`, {
       method: "DELETE",
-      token: acmeUser.token,
+      token: nsUser.token,
     });
     assert.equal(userDel.status, 403);
 
-    const adminDel = await req(`/api/tenant/projects/${created.data.project.id}`, {
+    const adminDel = await req(`/api/tenant/incidents/${created.data.incident.id}`, {
       method: "DELETE",
-      token: acmeAdmin.token,
+      token: nsAdmin.token,
     });
     assert.equal(adminDel.status, 204);
   });
 
-  it("dynamically gates backend APIs when Super Admin toggles plan features", async () => {
+  it("enforces dynamic subscription plan feature gates immediately on toggle", async () => {
     const superAdmin = await login(DEMO_ACCOUNTS.superAdmin);
-    const acme = await login(DEMO_ACCOUNTS.acmeAdmin);
-    const starterPlanId = acme.tenant.plan.id;
+    const northstar = await login(DEMO_ACCOUNTS.northstarAdmin);
+    const starterPlanId = northstar.tenant.plan.id;
 
-    // Starter plan has analytics disabled initially
-    const blocked = await req("/api/tenant/analytics", { token: acme.token });
+    // Starter plan has sla_analytics gated off by default
+    const blocked = await req("/api/tenant/analytics", { token: northstar.token });
     assert.equal(blocked.status, 403);
     assert.equal(blocked.data.error.code, "FEATURE_DISABLED");
 
-    // Super Admin enables analytics on Starter plan
-    const enableRes = await req(`/api/admin/plans/${starterPlanId}/features/analytics`, {
+    // Super Admin toggles sla_analytics ON for Starter
+    const toggleOn = await req(`/api/admin/plans/${starterPlanId}/features/sla_analytics`, {
       method: "PATCH",
       token: superAdmin.token,
       body: { enabled: true },
     });
-    assert.equal(enableRes.status, 200);
-    assert.equal(enableRes.data.enabled, true);
+    assert.equal(toggleOn.status, 200);
 
-    // Same existing Acme JWT immediately gains access (live DB check)
-    const allowed = await req("/api/tenant/analytics", { token: acme.token });
-    assert.equal(allowed.status, 200);
-    assert.equal(allowed.data.tenant.slug, "acme");
+    // Same existing Northstar JWT immediately unlocks SLA telemetry
+    const unlocked = await req("/api/tenant/analytics", { token: northstar.token });
+    assert.equal(unlocked.status, 200);
+    assert.equal(unlocked.data.tenant.slug, "northstar");
+    assert.equal(typeof unlocked.data.summary.mttrMinutes, "number");
 
-    // Restore Starter plan analytics back to false
-    await req(`/api/admin/plans/${starterPlanId}/features/analytics`, {
+    // Restore Starter sla_analytics back to false
+    await req(`/api/admin/plans/${starterPlanId}/features/sla_analytics`, {
       method: "PATCH",
       token: superAdmin.token,
       body: { enabled: false },
     });
 
-    const blockedAgain = await req("/api/tenant/analytics", { token: acme.token });
+    const blockedAgain = await req("/api/tenant/analytics", { token: northstar.token });
     assert.equal(blockedAgain.status, 403);
+  });
+
+  it("delivers HMAC-SHA256 signed webhook pings for entitled tenants", async () => {
+    const helios = await login(DEMO_ACCOUNTS.heliosAdmin);
+    const list = await req("/api/tenant/webhooks", { token: helios.token });
+    assert.equal(list.status, 200);
+    assert.ok(list.data.webhooks.length >= 1);
+
+    const ping = await req(`/api/tenant/webhooks/${list.data.webhooks[0].id}/ping`, {
+      method: "POST",
+      token: helios.token,
+    });
+    assert.equal(ping.status, 200);
+    assert.match(ping.data.headers["X-RelayOps-Signature"], /^sha256=[a-f0-9]{64}$/);
   });
 });

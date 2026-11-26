@@ -17,6 +17,7 @@ function formatTenantPayload(tenant) {
   return {
     id: tenant.id,
     slug: tenant.slug,
+    codePrefix: tenant.codePrefix,
     name: tenant.name,
     status: tenant.status,
     plan: {
@@ -52,11 +53,11 @@ router.post(
     });
 
     if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
+      throw new AppError(401, "INVALID_CREDENTIALS", "Incorrect email or password.");
     }
 
     if (user.tenant && user.tenant.status !== "active") {
-      throw new AppError(403, "TENANT_SUSPENDED", "Your organization workspace is currently suspended.");
+      throw new AppError(403, "TENANT_SUSPENDED", "This organization workspace is currently suspended.");
     }
 
     const token = signToken(user);
@@ -66,6 +67,7 @@ router.post(
         id: user.id,
         email: user.email,
         name: user.name,
+        title: user.title,
         role: user.role,
         tenantId: user.tenantId,
       },
@@ -98,6 +100,7 @@ router.get(
         id: user.id,
         email: user.email,
         name: user.name,
+        title: user.title,
         role: user.role,
         tenantId: user.tenantId,
       },

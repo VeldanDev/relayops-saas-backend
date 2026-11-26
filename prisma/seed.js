@@ -1,43 +1,64 @@
+import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 
 export const DEMO_ACCOUNTS = {
-  superAdmin: { email: "superadmin@softlligence.dev", password: "Admin123!" },
-  acmeAdmin: { email: "admin@acme.dev", password: "Tenant123!" },
-  acmeUser: { email: "user@acme.dev", password: "Tenant123!" },
-  globexAdmin: { email: "admin@globex.dev", password: "Tenant123!" },
-  globexUser: { email: "user@globex.dev", password: "Tenant123!" },
+  superAdmin: { email: "ops@relayops.io", password: "Admin123!" },
+  northstarAdmin: { email: "arin@northstarpay.co", password: "Tenant123!" },
+  northstarUser: { email: "dina@northstarpay.co", password: "Tenant123!" },
+  heliosAdmin: { email: "devon@helioscloud.io", password: "Tenant123!" },
+  heliosUser: { email: "sara@helioscloud.io", password: "Tenant123!" },
 };
 
 const FEATURES = [
-  { key: "projects", name: "Projects Workspace", description: "Create and manage tenant-scoped projects" },
-  { key: "analytics", name: "Usage Analytics", description: "Aggregated metrics and activity trends for the tenant" },
-  { key: "webhooks", name: "Outbound Webhooks", description: "Register event webhooks for external integrations" },
-  { key: "audit_logs", name: "Audit Trail", description: "Inspect security and mutation logs inside the tenant" },
-  { key: "team_invites", name: "Team Management", description: "Add and manage users within the tenant organization" },
+  {
+    key: "incidents",
+    name: "Incident Queue & Triage",
+    description: "Create, assign, comment on, and resolve tenant-scoped incidents",
+  },
+  {
+    key: "sla_analytics",
+    name: "SLA & MTTR Telemetry",
+    description: "Mean time to resolution, SLA breach tracking, and service breakdown",
+  },
+  {
+    key: "webhooks",
+    name: "HMAC Event Webhooks",
+    description: "Signed outbound HTTP callbacks on incident lifecycle transitions",
+  },
+  {
+    key: "team_invites",
+    name: "Seat Provisioning",
+    description: "Invite additional responders and admins into the organization",
+  },
+  {
+    key: "audit_logs",
+    name: "Compliance Audit Trail",
+    description: "Immutable record of administrative and operational mutations",
+  },
 ];
 
 const PLANS = [
   {
     code: "starter",
     name: "Starter",
-    description: "Core workspace for small teams.",
-    priceMonthly: 29,
-    enabledKeys: ["projects"],
+    description: "Essential incident queue for early engineering teams.",
+    priceMonthly: 0,
+    enabledKeys: ["incidents"],
   },
   {
-    code: "pro",
-    name: "Pro",
-    description: "Full operational suite with analytics, webhooks, and audit logs.",
-    priceMonthly: 99,
-    enabledKeys: ["projects", "analytics", "webhooks", "audit_logs", "team_invites"],
+    code: "growth",
+    name: "Growth",
+    description: "Full operational suite with SLA telemetry, webhooks, and team expansion.",
+    priceMonthly: 79,
+    enabledKeys: ["incidents", "sla_analytics", "webhooks", "team_invites", "audit_logs"],
   },
   {
     code: "enterprise",
     name: "Enterprise",
-    description: "Unrestricted multi-team capabilities and compliance controls.",
+    description: "Dedicated multi-region SLA guarantees and full compliance controls.",
     priceMonthly: 249,
-    enabledKeys: ["projects", "analytics", "webhooks", "audit_logs", "team_invites"],
+    enabledKeys: ["incidents", "sla_analytics", "webhooks", "team_invites", "audit_logs"],
   },
 ];
 
@@ -70,16 +91,30 @@ export async function seedDatabase(prisma) {
     }
   }
 
-  const acme = await prisma.tenant.upsert({
-    where: { slug: "acme" },
+  const northstar = await prisma.tenant.upsert({
+    where: { slug: "northstar" },
     update: {},
-    create: { slug: "acme", name: "Acme Corp", planId: planByCode.starter.id, status: "active" },
+    create: {
+      slug: "northstar",
+      codePrefix: "NSP",
+      nextIncidentSeq: 104,
+      name: "NorthstarPay",
+      planId: planByCode.starter.id,
+      status: "active",
+    },
   });
 
-  const globex = await prisma.tenant.upsert({
-    where: { slug: "globex" },
+  const helios = await prisma.tenant.upsert({
+    where: { slug: "helios" },
     update: {},
-    create: { slug: "globex", name: "Globex Labs", planId: planByCode.pro.id, status: "active" },
+    create: {
+      slug: "helios",
+      codePrefix: "HLC",
+      nextIncidentSeq: 105,
+      name: "Helios Cloud",
+      planId: planByCode.growth.id,
+      status: "active",
+    },
   });
 
   const adminHash = await bcrypt.hash("Admin123!", 10);
@@ -91,109 +126,231 @@ export async function seedDatabase(prisma) {
     create: {
       email: DEMO_ACCOUNTS.superAdmin.email,
       passwordHash: adminHash,
-      name: "Platform Super Admin",
+      name: "Maya Lin",
+      title: "Platform Operations Lead",
       role: "SUPER_ADMIN",
       tenantId: null,
     },
   });
 
-  const acmeAdmin = await prisma.user.upsert({
-    where: { email: DEMO_ACCOUNTS.acmeAdmin.email },
+  const nsAdmin = await prisma.user.upsert({
+    where: { email: DEMO_ACCOUNTS.northstarAdmin.email },
     update: {},
     create: {
-      email: DEMO_ACCOUNTS.acmeAdmin.email,
+      email: DEMO_ACCOUNTS.northstarAdmin.email,
       passwordHash: tenantHash,
-      name: "Rina Pratama",
+      name: "Arin Wijaya",
+      title: "Payments Engineering Lead",
       role: "TENANT_ADMIN",
-      tenantId: acme.id,
+      tenantId: northstar.id,
     },
   });
 
-  await prisma.user.upsert({
-    where: { email: DEMO_ACCOUNTS.acmeUser.email },
+  const nsUser = await prisma.user.upsert({
+    where: { email: DEMO_ACCOUNTS.northstarUser.email },
     update: {},
     create: {
-      email: DEMO_ACCOUNTS.acmeUser.email,
+      email: DEMO_ACCOUNTS.northstarUser.email,
       passwordHash: tenantHash,
-      name: "Budi Santoso",
+      name: "Dina Kusuma",
+      title: "On-Call SRE",
       role: "TENANT_USER",
-      tenantId: acme.id,
+      tenantId: northstar.id,
     },
   });
 
-  const globexAdmin = await prisma.user.upsert({
-    where: { email: DEMO_ACCOUNTS.globexAdmin.email },
+  const hlAdmin = await prisma.user.upsert({
+    where: { email: DEMO_ACCOUNTS.heliosAdmin.email },
     update: {},
     create: {
-      email: DEMO_ACCOUNTS.globexAdmin.email,
+      email: DEMO_ACCOUNTS.heliosAdmin.email,
       passwordHash: tenantHash,
-      name: "Elena Vance",
+      name: "Devon Brooks",
+      title: "VP Infrastructure",
       role: "TENANT_ADMIN",
-      tenantId: globex.id,
+      tenantId: helios.id,
     },
   });
 
-  await prisma.user.upsert({
-    where: { email: DEMO_ACCOUNTS.globexUser.email },
+  const hlUser = await prisma.user.upsert({
+    where: { email: DEMO_ACCOUNTS.heliosUser.email },
     update: {},
     create: {
-      email: DEMO_ACCOUNTS.globexUser.email,
+      email: DEMO_ACCOUNTS.heliosUser.email,
       passwordHash: tenantHash,
-      name: "Marcus Chen",
+      name: "Sara Lindqvist",
+      title: "Staff Reliability Engineer",
       role: "TENANT_USER",
-      tenantId: globex.id,
+      tenantId: helios.id,
     },
   });
 
-  if ((await prisma.project.count({ where: { tenantId: acme.id } })) === 0) {
-    await prisma.project.createMany({
-      data: [
-        {
-          tenantId: acme.id,
-          name: "Acme Billing Migration",
-          description: "Move legacy invoice exports to scheduled background workers.",
-          status: "active",
-          createdById: acmeAdmin.id,
-        },
-        {
-          tenantId: acme.id,
-          name: "Customer Onboarding Form",
-          description: "Reduce signup friction from 5 steps down to 2.",
-          status: "active",
-          createdById: acmeAdmin.id,
-        },
-      ],
-    });
-  }
+  const now = Date.now();
+  const minsAgo = (m) => new Date(now - m * 60_000);
 
-  if ((await prisma.project.count({ where: { tenantId: globex.id } })) === 0) {
-    await prisma.project.createMany({
-      data: [
-        {
-          tenantId: globex.id,
-          name: "Globex Telemetry Pipeline",
-          description: "Ingest real-time sensor payloads with tenant-partitioned storage.",
-          status: "active",
-          createdById: globexAdmin.id,
-        },
-        {
-          tenantId: globex.id,
-          name: "Zero-Downtime Schema Rollout",
-          description: "Expand-and-contract migration playbook for core tables.",
-          status: "archived",
-          createdById: globexAdmin.id,
-        },
-      ],
-    });
-  }
-
-  if ((await prisma.webhook.count({ where: { tenantId: globex.id } })) === 0) {
-    await prisma.webhook.create({
+  if ((await prisma.incident.count({ where: { tenantId: northstar.id } })) === 0) {
+    const nsp101 = await prisma.incident.create({
       data: {
-        tenantId: globex.id,
-        url: "https://hooks.globex.example/v1/events",
-        event: "project.created",
+        tenantId: northstar.id,
+        key: "NSP-101",
+        title: "Elevated p99 latency on QRIS settlement callback",
+        description:
+          "Upstream acquirer gateway timeouts are causing retry queue buildup on worker pool B. Checkout authorization remains unaffected.",
+        service: "settlement-worker",
+        severity: "P1",
+        status: "INVESTIGATING",
+        slaMinutes: 30,
+        reporterId: nsAdmin.id,
+        assigneeId: nsUser.id,
+        createdAt: minsAgo(22),
+      },
+    });
+
+    await prisma.incidentComment.createMany({
+      data: [
+        {
+          tenantId: northstar.id,
+          incidentId: nsp101.id,
+          authorId: nsUser.id,
+          body: "Confirmed connection pool saturation on settlement-db-replica-2. Draining stuck workers and raising circuit-breaker threshold.",
+          createdAt: minsAgo(14),
+        },
+        {
+          tenantId: northstar.id,
+          incidentId: nsp101.id,
+          authorId: nsAdmin.id,
+          body: "Merchant status banner updated. Keep retry concurrency capped at 16 until p99 drops below 400ms.",
+          createdAt: minsAgo(6),
+        },
+      ],
+    });
+
+    await prisma.incident.create({
+      data: {
+        tenantId: northstar.id,
+        key: "NSP-102",
+        title: "Delayed PDF invoice generation for batch payouts",
+        description: "Font subsetting cache miss after container rollout v2.18.4.",
+        service: "billing-documents",
+        severity: "P2",
+        status: "MITIGATED",
+        slaMinutes: 60,
+        reporterId: nsUser.id,
+        assigneeId: nsAdmin.id,
+        createdAt: minsAgo(95),
+      },
+    });
+
+    await prisma.incident.create({
+      data: {
+        tenantId: northstar.id,
+        key: "NSP-103",
+        title: "Stale FX rate fallback triggered on SGD corridor",
+        description: "Primary pricing feed rotated TLS certificate; pinned CA bundle updated.",
+        service: "fx-quoter",
+        severity: "P3",
+        status: "RESOLVED",
+        slaMinutes: 120,
+        createdAt: minsAgo(260),
+        resolvedAt: minsAgo(218),
+        reporterId: nsAdmin.id,
+        assigneeId: nsUser.id,
+      },
+    });
+  }
+
+  if ((await prisma.incident.count({ where: { tenantId: helios.id } })) === 0) {
+    const hlc101 = await prisma.incident.create({
+      data: {
+        tenantId: helios.id,
+        key: "HLC-101",
+        title: "Packet loss between ap-southeast-1 ingress and mesh-gw-04",
+        description:
+          "BGP session flap observed on transit provider B. Automated traffic shift routed 85% of ingress to mesh-gw-02.",
+        service: "edge-proxy-ap1",
+        severity: "P1",
+        status: "MITIGATED",
+        slaMinutes: 30,
+        reporterId: hlAdmin.id,
+        assigneeId: hlUser.id,
+        createdAt: minsAgo(38),
+      },
+    });
+
+    await prisma.incidentComment.createMany({
+      data: [
+        {
+          tenantId: helios.id,
+          incidentId: hlc101.id,
+          authorId: hlUser.id,
+          body: "BGP peer drained cleanly. Packet loss back to 0.00% across synthetic probes in Singapore and Jakarta.",
+          createdAt: minsAgo(24),
+        },
+      ],
+    });
+
+    await prisma.incident.create({
+      data: {
+        tenantId: helios.id,
+        key: "HLC-102",
+        title: "WAL archive lag exceeding 4GB on tenant-shard-07",
+        description: "Object storage multipart upload throttling during peak hourly snapshot window.",
+        service: "postgres-clusters",
+        severity: "P2",
+        status: "INVESTIGATING",
+        slaMinutes: 60,
+        reporterId: hlUser.id,
+        assigneeId: hlAdmin.id,
+        createdAt: minsAgo(51),
+      },
+    });
+
+    await prisma.incident.create({
+      data: {
+        tenantId: helios.id,
+        key: "HLC-103",
+        title: "OIDC token refresh skew for federated SAML workspaces",
+        description: "Added 30-second clock-skew tolerance on token verifier.",
+        service: "identity-gateway",
+        severity: "P2",
+        status: "RESOLVED",
+        slaMinutes: 60,
+        createdAt: minsAgo(310),
+        resolvedAt: minsAgo(276),
+        reporterId: hlAdmin.id,
+        assigneeId: hlUser.id,
+      },
+    });
+
+    await prisma.incident.create({
+      data: {
+        tenantId: helios.id,
+        key: "HLC-104",
+        title: "Delayed Prometheus scrape target discovery in eu-central",
+        description: "Controller informer cache resync interval tuned from 10m to 90s.",
+        service: "metrics-ingestor",
+        severity: "P4",
+        status: "RESOLVED",
+        slaMinutes: 240,
+        createdAt: minsAgo(520),
+        resolvedAt: minsAgo(465),
+        reporterId: hlUser.id,
+        assigneeId: hlUser.id,
+      },
+    });
+  }
+
+  if ((await prisma.webhookEndpoint.count({ where: { tenantId: helios.id } })) === 0) {
+    await prisma.webhookEndpoint.create({
+      data: {
+        tenantId: helios.id,
+        description: "PagerDuty & Slack #ops-critical bridge",
+        url: "https://hooks.helioscloud.example/v1/relayops",
+        events: JSON.stringify(["incident.created", "incident.resolved", "sla.breached"]),
+        signingSecret: `whsec_${crypto.randomBytes(16).toString("hex")}`,
         active: true,
+        lastStatus: 200,
+        lastDeliveryAt: minsAgo(24),
       },
     });
   }
@@ -204,16 +361,34 @@ export async function seedDatabase(prisma) {
         {
           tenantId: null,
           actorId: superAdmin.id,
-          action: "platform.seeded",
-          resource: "system",
-          meta: JSON.stringify({ plans: 3, tenants: 2 }),
+          action: "platform.initialized",
+          resource: "system:plans",
+          meta: JSON.stringify({ plans: ["starter", "growth", "enterprise"] }),
+          createdAt: minsAgo(600),
         },
         {
-          tenantId: globex.id,
-          actorId: globexAdmin.id,
-          action: "webhook.created",
-          resource: "webhook",
-          meta: JSON.stringify({ event: "project.created" }),
+          tenantId: helios.id,
+          actorId: hlAdmin.id,
+          action: "webhook.registered",
+          resource: "webhook:ops-bridge",
+          meta: JSON.stringify({ events: ["incident.created", "incident.resolved"] }),
+          createdAt: minsAgo(180),
+        },
+        {
+          tenantId: helios.id,
+          actorId: hlUser.id,
+          action: "incident.mitigated",
+          resource: "incident:HLC-101",
+          meta: JSON.stringify({ service: "edge-proxy-ap1", severity: "P1" }),
+          createdAt: minsAgo(24),
+        },
+        {
+          tenantId: northstar.id,
+          actorId: nsAdmin.id,
+          action: "incident.created",
+          resource: "incident:NSP-101",
+          meta: JSON.stringify({ service: "settlement-worker", severity: "P1" }),
+          createdAt: minsAgo(22),
         },
       ],
     });
@@ -224,9 +399,9 @@ const isDirectRun = process.argv[1]?.replace(/\\/g, "/").endsWith("/prisma/seed.
 if (isDirectRun) {
   const prisma = new PrismaClient();
   seedDatabase(prisma)
-    .then(() => console.log("Seed completed successfully."))
+    .then(() => console.log("RelayOps database seeded."))
     .catch((err) => {
-      console.error("Seed failed:", err);
+      console.error("Seed error:", err);
       process.exit(1);
     })
     .finally(() => prisma.$disconnect());

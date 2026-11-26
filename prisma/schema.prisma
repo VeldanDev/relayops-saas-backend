@@ -41,67 +41,101 @@ model PlanFeature {
 }
 
 model Tenant {
-  id        String     @id @default(cuid())
-  slug      String     @unique
-  name      String
-  status    String     @default("active")
-  planId    String
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id              String            @id @default(cuid())
+  slug            String            @unique
+  codePrefix      String
+  nextIncidentSeq Int               @default(101)
+  name            String
+  status          String            @default("active")
+  planId          String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  plan      Plan       @relation(fields: [planId], references: [id])
-  users     User[]
-  projects  Project[]
-  webhooks  Webhook[]
-  auditLogs AuditLog[]
+  plan            Plan              @relation(fields: [planId], references: [id])
+  users           User[]
+  incidents       Incident[]
+  comments        IncidentComment[]
+  webhooks        WebhookEndpoint[]
+  auditLogs       AuditLog[]
 
   @@index([planId])
   @@index([status])
 }
 
 model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  passwordHash String
-  name         String
-  role         String     // SUPER_ADMIN | TENANT_ADMIN | TENANT_USER
-  tenantId     String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                String            @id @default(cuid())
+  email             String            @unique
+  passwordHash      String
+  name              String
+  title             String            @default("Engineer")
+  role              String            // SUPER_ADMIN | TENANT_ADMIN | TENANT_USER
+  tenantId          String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  tenant    Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  projects  Project[]
-  auditLogs AuditLog[]
+  tenant            Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reportedIncidents Incident[]        @relation("IncidentReporter")
+  assignedIncidents Incident[]        @relation("IncidentAssignee")
+  comments          IncidentComment[]
+  auditLogs         AuditLog[]
 
   @@index([tenantId, role])
 }
 
-model Project {
-  id          String   @id @default(cuid())
+model Incident {
+  id          String            @id @default(cuid())
   tenantId    String
-  name        String
-  description String   @default("")
-  status      String   @default("active") // active | archived
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  key         String
+  title       String
+  description String            @default("")
+  service     String            @default("core-api")
+  severity    String            @default("P2")   // P1 | P2 | P3 | P4
+  status      String            @default("OPEN") // OPEN | INVESTIGATING | MITIGATED | RESOLVED
+  slaMinutes  Int               @default(60)
+  resolvedAt  DateTime?
+  reporterId  String
+  assigneeId  String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
-  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy User   @relation(fields: [createdById], references: [id])
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reporter    User              @relation("IncidentReporter", fields: [reporterId], references: [id])
+  assignee    User?             @relation("IncidentAssignee", fields: [assigneeId], references: [id])
+  comments    IncidentComment[]
 
+  @@unique([tenantId, key])
+  @@index([tenantId, status, severity])
   @@index([tenantId, createdAt])
-  @@index([tenantId, status])
 }
 
-model Webhook {
-  id        String   @id @default(cuid())
-  tenantId  String
-  url       String
-  event     String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+model IncidentComment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  incidentId String
+  authorId   String
+  body       String
+  createdAt  DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id])
+
+  @@index([tenantId, incidentId, createdAt])
+}
+
+model WebhookEndpoint {
+  id             String    @id @default(cuid())
+  tenantId       String
+  description    String    @default("")
+  url            String
+  events         String    // JSON array string
+  signingSecret  String
+  active         Boolean   @default(true)
+  lastStatus     Int?
+  lastDeliveryAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
 }
@@ -115,8 +149,8 @@ model AuditLog {
   meta      String   @default("{}")
   createdAt DateTime @default(now())
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  actor  User    @relation(fields: [actorId], references: [id])
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor     User     @relation(fields: [actorId], references: [id])
 
   @@index([tenantId, createdAt])
   @@index([actorId, createdAt])
