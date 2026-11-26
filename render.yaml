@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: softlligence-saas-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate && npx prisma db push
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: file:./prod.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: "*"

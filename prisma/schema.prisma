@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Plan {
+  id           String        @id @default(cuid())
+  code         String        @unique
+  name         String
+  description  String
+  priceMonthly Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  features     PlanFeature[]
+  tenants      Tenant[]
+}
+
+model Feature {
+  id          String        @id @default(cuid())
+  key         String        @unique
+  name        String
+  description String
+  plans       PlanFeature[]
+}
+
+model PlanFeature {
+  planId    String
+  featureId String
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@id([planId, featureId])
+  @@index([planId, enabled])
+}
+
+model Tenant {
+  id        String     @id @default(cuid())
+  slug      String     @unique
+  name      String
+  status    String     @default("active")
+  planId    String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  plan      Plan       @relation(fields: [planId], references: [id])
+  users     User[]
+  projects  Project[]
+  webhooks  Webhook[]
+  auditLogs AuditLog[]
+
+  @@index([planId])
+  @@index([status])
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         String     // SUPER_ADMIN | TENANT_ADMIN | TENANT_USER
+  tenantId     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant    Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  projects  Project[]
+  auditLogs AuditLog[]
+
+  @@index([tenantId, role])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String   @default("")
+  status      String   @default("active") // active | archived
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User   @relation(fields: [createdById], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  tenantId  String
+  url       String
+  event     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  actorId   String
+  action    String
+  resource  String
+  meta      String   @default("{}")
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User    @relation(fields: [actorId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+}
