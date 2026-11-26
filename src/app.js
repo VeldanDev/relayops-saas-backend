@@ -35,6 +35,15 @@ export function createApp() {
     app.use(morgan("dev"));
   }
 
+  app.get("/", (_req, res) => {
+    res.json({
+      service: "RelayOps Multi-Tenant SaaS API",
+      docs: "/api-docs",
+      openapi: "/openapi.json",
+      health: "/health",
+    });
+  });
+
   app.get("/health", async (_req, res, next) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -45,7 +54,16 @@ export function createApp() {
   });
 
   app.get("/openapi.json", (_req, res) => res.json(openApiSpec));
-  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
+  const swaggerOpts = process.env.VERCEL
+    ? {
+        customCssUrl: "https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css",
+        customJs: [
+          "https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js",
+          "https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js",
+        ],
+      }
+    : undefined;
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiSpec, swaggerOpts));
 
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);
