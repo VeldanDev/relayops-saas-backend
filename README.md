@@ -1,6 +1,20 @@
-# RelayOps — Multi-Tenant SaaS Backend
+# RelayOps Multi-Tenant SaaS Backend
 
 Node.js + Express.js + Prisma REST API for **RelayOps**, a multi-tenant incident management and SLA telemetry platform. Built with strict query-level tenant isolation, RBAC, atomic per-tenant incident keys, HMAC-SHA256 webhooks, and live subscription-plan feature gating.
+
+## Database Schema Overview (`prisma/schema.prisma`)
+
+| Model | Scope | Key Columns & Indexes | Purpose |
+| :--- | :--- | :--- | :--- |
+| `Plan` | Global | `slug` (unique), `priceMonthly` | Subscription tiers (`Starter`, `Growth`, `Enterprise`). |
+| `Feature` | Global | `key` (unique) | Gateable capabilities (`incidents`, `sla_analytics`, `webhooks`, `team_invites`, `audit_logs`). |
+| `PlanFeature` | Global | `@@unique([planId, featureId])` | Normalized join table linking plans to enabled capabilities. |
+| `Tenant` | Root Tenant | `slug` (unique), `codePrefix`, `nextIncidentSeq`, `planId`, `status` | Isolated organization workspace with atomic incident sequence counter (`NSP-101`, `HLC-101`). |
+| `User` | Tenant / Platform | `email` (unique), `role`, `@@index([tenantId])` | Accounts bound to a single tenant (`TENANT_ADMIN`, `TENANT_USER`) or global `SUPER_ADMIN` (`tenantId = null`). |
+| `Incident` | Tenant-Scoped | `@@unique([tenantId, key])`, `@@index([tenantId, status])` | Operational incidents with severity (`P1`-`P4`), SLA target minutes, and resolution timestamps. |
+| `IncidentComment` | Tenant-Scoped | `@@index([tenantId, incidentId])` | Investigation timeline notes strictly scoped by both `tenantId` and `incidentId`. |
+| `WebhookEndpoint` | Tenant-Scoped | `@@index([tenantId])`, `secret` (`whsec_...`) | Outbound HTTP callback targets signed with HMAC-SHA256 (`X-RelayOps-Signature`). |
+| `AuditLog` | Tenant / Platform | `@@index([tenantId, createdAt])` | Append-only record of administrative and operational mutations. |
 
 ## Core Architecture
 
