@@ -1,14 +1,16 @@
 {
   "version": 2,
   "buildCommand": "npm run vercel-build",
+  "outputDirectory": "public",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api" }
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/health", "destination": "/api" },
+    { "source": "/openapi.json", "destination": "/api" },
+    { "source": "/api-docs", "destination": "/api" },
+    { "source": "/api-docs/(.*)", "destination": "/api" }
   ],
   "functions": {
     "api/index.js": {
-      "includeFiles": "prisma/template.db"
-    },
-    "src/server.js": {
       "includeFiles": "prisma/template.db"
     }
   }
