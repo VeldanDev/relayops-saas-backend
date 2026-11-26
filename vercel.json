@@ -2,11 +2,13 @@
   "version": 2,
   "buildCommand": "npm run vercel-build",
   "rewrites": [
-    { "source": "/", "destination": "/api" },
     { "source": "/(.*)", "destination": "/api" }
   ],
   "functions": {
     "api/index.js": {
+      "includeFiles": "prisma/template.db"
+    },
+    "src/server.js": {
       "includeFiles": "prisma/template.db"
     }
   }
